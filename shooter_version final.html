@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Space Shooter - Niveles</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+        #gameContainer {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        #player {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            transform: translate(-50%, -50%) rotate(0deg);
+            z-index: 2;
+        }
+        .asteroid {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background: #555;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .enemyBullet {
+            position: absolute;
+            width: 5px;
+            height: 5px;
+            background: #f44;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .bullet {
+            position: absolute;
+            width: 5px;
+            height: 5px;
+            background: #ff0;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+        #startScreen, #gameOverScreen {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 4;
+        }
+        #startScreen button, #gameOverScreen button {
+            padding: 10px 20px;
+            font-size: 18px;
+            margin-top: 10px;
+            cursor: pointer;
+        }
+        #score {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: #fff;
+            font-size: 24px;
+            z-index: 5;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="player" style="display: none;">
+            <svg width="40" height="40" viewBox="0 0 40 40">
+                <path d="M20 0 L40 40 L20 30 L0 40 Z" fill="#4f8" />
+                <circle cx="20" cy="20" r="5" fill="#4f8"></circle>
+            </svg>
+        </div>
+        <div id="startScreen">
+            <h1>Space Shooter</h1>
+            <p>Selecciona un nivel de dificultad:</p>
+            <button onclick="startGame('easy')">Fácil</button>
+            <button onclick="startGame('hard')">Difícil</button>
+        </div>
+        <div id="gameOverScreen" style="display: none;">
+            <h1>¡Juego Terminado!</h1>
+            <p id="finalScore"></p>
+            <button onclick="restartLevel()">Reiniciar</button>
+            <button onclick="returnToMenu()">Menú Principal</button>
+        </div>
+        <div id="score" style="display: none;">Puntaje: 0</div>
+    </div>
+
+    <script>
+        const player = document.getElementById('player');
+        const gameContainer = document.getElementById('gameContainer');
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const finalScoreElement = document.getElementById('finalScore');
+        const scoreElement = document.getElementById('score');
+
+        let playerPos = { x: window.innerWidth / 2, y: window.innerHeight - 100 };
+        let playerVelocity = { x: 0, y: 0 };
+        let bullets = [];
+        let asteroids = [];
+        let enemyBullets = [];
+        let score = 0;
+        let mouseAngle = 0;
+        let propulsionActive = false;
+        let keys = {};
+        let gameInterval, asteroidInterval, enemyShootInterval, currentDifficulty;
+        let difficultySettings = {
+            easy: { asteroidSpeed: 2, asteroidFrequency: 1000, enemyColor: '#555', enemyShoots: false },
+            hard: { asteroidSpeed: 4, asteroidFrequency: 800, enemyColor: '#f44', enemyShoots: true },
+        };
+
+        document.addEventListener('keydown', (e) => (keys[e.key] = true));
+        document.addEventListener('keyup', (e) => (keys[e.key] = false));
+
+        document.addEventListener('mousemove', (e) => {
+            const dx = e.clientX - playerPos.x;
+            const dy = e.clientY - playerPos.y;
+            mouseAngle = Math.atan2(dy, dx);
+            player.style.transform = `translate(-50%, -50%) rotate(${mouseAngle}rad)`;
+        });
+
+        document.addEventListener('click', () => {
+            createBullet();
+        });
+
+        function startGame(difficulty) {
+            currentDifficulty = difficulty;
+            startScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+            player.style.display = 'block';
+            scoreElement.style.display = 'block';
+            score = 0;
+            updateScore();
+
+            playerPos = { x: window.innerWidth / 2, y: window.innerHeight - 100 };
+            playerVelocity = { x: 0, y: 0 };
+
+            const settings = difficultySettings[difficulty];
+
+            gameInterval = setInterval(() => {
+                updatePlayer();
+                updateBullets();
+                updateEnemyBullets();
+                updateAsteroids();
+            }, 16);
+            asteroidInterval = setInterval(() => createAsteroid(settings), settings.asteroidFrequency);
+
+            if (settings.enemyShoots) {
+                enemyShootInterval = setInterval(() => {
+                    for (const asteroid of asteroids) {
+                        createEnemyBullet(asteroid);
+                    }
+                }, 1500);
+            }
+        }
+
+        function updatePlayer() {
+            if (keys['w'] || keys['ArrowUp']) playerVelocity.y -= 0.5;
+            if (keys['s'] || keys['ArrowDown']) playerVelocity.y += 0.5;
+            if (keys['a'] || keys['ArrowLeft']) playerVelocity.x -= 0.5;
+            if (keys['d'] || keys['ArrowRight']) playerVelocity.x += 0.5;
+
+            if (keys[' '] && !propulsionActive) {
+                propulsionActive = true;
+                playerVelocity.x += Math.cos(mouseAngle) * 5;
+                playerVelocity.y += Math.sin(mouseAngle) * 5;
+                setTimeout(() => propulsionActive = false, 2000);
+            }
+
+            playerVelocity.x *= 0.98;
+            playerVelocity.y *= 0.98;
+
+            playerPos.x += playerVelocity.x;
+            playerPos.y += playerVelocity.y;
+
+            playerPos.x = Math.max(20, Math.min(window.innerWidth - 20, playerPos.x));
+            playerPos.y = Math.max(20, Math.min(window.innerHeight - 20, playerPos.y));
+
+            player.style.left = playerPos.x + 'px';
+            player.style.top = playerPos.y + 'px';
+
+            checkCollisions();
+        }
+
+        function createBullet() {
+            const bullet = document.createElement('div');
+            bullet.className = 'bullet';
+            bullet.style.left = playerPos.x + 'px';
+            bullet.style.top = playerPos.y + 'px';
+            gameContainer.appendChild(bullet);
+
+            bullet.velocityX = Math.cos(mouseAngle) * 10;
+            bullet.velocityY = Math.sin(mouseAngle) * 10;
+            bullets.push(bullet);
+        }
+
+        function updateBullets() {
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                const currentLeft = parseFloat(bullet.style.left);
+                const currentTop = parseFloat(bullet.style.top);
+                bullet.style.left = currentLeft + bullet.velocityX + 'px';
+                bullet.style.top = currentTop + bullet.velocityY + 'px';
+
+                for (let j = asteroids.length - 1; j >= 0; j--) {
+                    const asteroid = asteroids[j];
+                    if (checkCollision(bullet, asteroid)) {
+                        bullet.remove();
+                        asteroid.remove();
+                        bullets.splice(i, 1);
+                        asteroids.splice(j, 1);
+                        score += 10;
+                        updateScore();
+                        break;
+                    }
+                }
+
+                if (currentLeft < 0 || currentLeft > window.innerWidth || currentTop < 0 || currentTop > window.innerHeight) {
+                    bullet.remove();
+                    bullets.splice(i, 1);
+                }
+            }
+        }
+
+        function createEnemyBullet(asteroid) {
+            const bullet = document.createElement('div');
+            bullet.className = 'enemyBullet';
+            bullet.style.left = asteroid.style.left;
+            bullet.style.top = asteroid.style.top;
+            gameContainer.appendChild(bullet);
+
+            const angle = Math.atan2(playerPos.y - parseFloat(bullet.style.top), playerPos.x - parseFloat(bullet.style.left));
+            bullet.velocityX = Math.cos(angle) * 5;
+            bullet.velocityY = Math.sin(angle) * 5;
+
+            enemyBullets.push(bullet);
+        }
+
+        function updateEnemyBullets() {
+            for (let i = enemyBullets.length - 1; i >= 0; i--) {
+                const bullet = enemyBullets[i];
+                const currentLeft = parseFloat(bullet.style.left);
+                const currentTop = parseFloat(bullet.style.top);
+                bullet.style.left = currentLeft + bullet.velocityX + 'px';
+                bullet.style.top = currentTop + bullet.velocityY + 'px';
+
+                if (checkCollision(player, bullet)) {
+                    endGame();
+                }
+
+                if (currentLeft < 0 || currentLeft > window.innerWidth || currentTop < 0 || currentTop > window.innerHeight) {
+                    bullet.remove();
+                    enemyBullets.splice(i, 1);
+                }
+            }
+        }
+
+        function createAsteroid(settings) {
+            const asteroid = document.createElement('div');
+            asteroid.className = 'asteroid';
+            asteroid.style.left = Math.random() * window.innerWidth + 'px';
+            asteroid.style.top = '-30px';
+            asteroid.style.background = settings.enemyColor;
+            gameContainer.appendChild(asteroid);
+
+            const angle = Math.atan2(playerPos.y - parseFloat(asteroid.style.top), playerPos.x - parseFloat(asteroid.style.left));
+            asteroid.velocityX = Math.cos(angle) * settings.asteroidSpeed;
+            asteroid.velocityY = Math.sin(angle) * settings.asteroidSpeed;
+
+            asteroids.push(asteroid);
+        }
+
+        function updateAsteroids() {
+            for (let i = asteroids.length - 1; i >= 0; i--) {
+                const asteroid = asteroids[i];
+                const currentLeft = parseFloat(asteroid.style.left);
+                const currentTop = parseFloat(asteroid.style.top);
+                asteroid.style.left = currentLeft + asteroid.velocityX + 'px';
+                asteroid.style.top = currentTop + asteroid.velocityY + 'px';
+
+                if (checkCollision(player, asteroid)) {
+                    endGame();
+                }
+
+                if (currentLeft < 0 || currentLeft > window.innerWidth || currentTop > window.innerHeight) {
+                    asteroid.remove();
+                    asteroids.splice(i, 1);
+                }
+            }
+        }
+
+        function checkCollisions() {
+            for (const enemyBullet of enemyBullets) {
+                if (checkCollision(player, enemyBullet)) {
+                    endGame();
+                }
+            }
+        }
+
+        function checkCollision(obj1, obj2) {
+            const rect1 = obj1.getBoundingClientRect();
+            const rect2 = obj2.getBoundingClientRect();
+            return !(
+                rect1.top > rect2.bottom ||
+                rect1.bottom < rect2.top ||
+                rect1.left > rect2.right ||
+                rect1.right < rect2.left
+            );
+        }
+
+        function updateScore() {
+            scoreElement.textContent = `Puntaje: ${score}`;
+        }
+
+        function endGame() {
+            clearInterval(gameInterval);
+            clearInterval(asteroidInterval);
+            clearInterval(enemyShootInterval);
+            finalScoreElement.textContent = `Tu puntaje: ${score}`;
+            gameOverScreen.style.display = 'block';
+        }
+
+        function restartLevel() {
+            clearInterval(gameInterval);
+            clearInterval(asteroidInterval);
+            clearInterval(enemyShootInterval);
+            startGame(currentDifficulty);
+        }
+
+        function returnToMenu() {
+            location.reload();
+        }
+    </script>
+</body>
+</html>
